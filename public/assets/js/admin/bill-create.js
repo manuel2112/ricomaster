@@ -1,0 +1,198 @@
+new Vue({
+            el: '#app',
+            data() {
+                return {
+                    week: {
+                        monday: null,
+                        thursday: null,
+                        wednesday: null,
+                        tuesday: null,
+                        friday: null,
+                    },
+                    day: {
+                        original: null,
+                        formatted: null,
+                    },
+                    typeMenu: {},
+                    weekId: null,
+                    listTypes: [],
+                    listMenus: [],
+                    listMenusByType: [],
+                    listBillSelect: [],
+                    selectedMenu: "",
+                    loading: false,
+                    menuId: 1,
+                    isProgrammed: false,
+                    counter: 0,
+                    counterDb: 0,
+                    type: null,
+                };
+            },
+            created() {
+                this.getType();
+            },
+            methods: {
+                getType() {
+                    const urlString = window.location.href;
+                    const url = new URL(urlString);
+                    const pathname = url.pathname;
+                    const segments = pathname.split('/').filter(segment => segment.length > 0);
+                    const countryCode = segments[0];
+                    const lastSegment = segments[segments.length - 1];
+                    this.type = lastSegment;
+                    this.instantiate();
+                },
+                instantiate() {
+                    const self = this;
+                    axios.get(`/api/bill/next/${this.type}`)
+                        .then(function(response) {
+                            self.isProgrammed = response.data.data.week.week_programmed;
+                            self.listTypes = response.data.data.types;
+                            self.listMenus = response.data.data.menu;
+                            self.week.monday = response.data.data.week.monday;
+                            self.week.thursday = response.data.data.week.thursday;
+                            self.week.wednesday = response.data.data.week.wednesday;
+                            self.week.tuesday = response.data.data.week.tuesday;
+                            self.week.friday = response.data.data.week.friday;
+                            self.week.weekId = response.data.data.week.week_id;
+                            self.listBillSelect = response.data.data.select;
+                            self.counterDb = response.data.data.parameters.bill_counter_default;
+                            self.counter = self.counterDb;
+                        })
+                        .catch(function(error) {
+                            console.error(error);
+                        })
+                        .finally(function() {});
+                },
+                getBillByDay(item, week) {
+                    for (let i = 0; i < this.listBillSelect.length; i++) {
+                        const bill = this.listBillSelect[i];
+                        if (bill.type_menu_id == item && bill.day == week) {
+                            return `${bill.counter} <br /> ${bill.menu.name}`;
+                        }
+                    }
+                    return '';
+                },
+                async storeUpdateBill(day) {
+
+                    if (!this.counter ||this.counter < 0) {
+                        Swal.fire(
+                            'Error',
+                            'debe ingresar una cantidad mayor igual a cero',
+                            'error'
+                        );
+                        return;
+                    }
+
+                    const payload = {
+                        week_id: this.week.weekId,
+                        type_menu_id: this.typeMenu.id,
+                        day: this.day.original,
+                        menu_id: this.menuId,
+                        counter: this.counter,
+                    };
+
+                    const self = this;
+                    this.loading = true;
+                    await axios.post('/api/bill', payload)
+                        .then(function(response) {
+                            self.listBillSelect = response.data.data;
+                            self.reset();
+                            $('#createBillModal').modal('hide');
+                        })
+                        .catch(function(error) {
+                            console.error(error);
+                        })
+                        .finally(function() {
+                            self.loading = false;
+                        });
+                },
+                async billStore() {
+                    if (this.listBillSelect.length < 20) {
+                        Swal.fire(
+                            'Error',
+                            'Debe seleccionar un menú para cada tipo y día de la semana.',
+                            'error'
+                        );
+                        return;
+                    }
+
+                    const payload = {
+                        week_id: this.week.weekId,
+                    };
+                    const self = this;
+                    this.loading = true;
+                    await axios.put('/api/bill/update', payload)
+                        .then(function(response) {
+                            self.reset();
+                            Swal.fire({
+                                title: 'Minuta',
+                                text: "La minuta ha sido programada correctamente.",
+                                icon: 'success',
+                                showCancelButton: false,
+                                confirmButtonColor: '#3085d6',
+                                confirmButtonText: 'OK'
+                            }).then((result) => {
+                                window.location.href = '/admin/minuta';
+                            });
+                        })
+                        .catch(function(error) {
+                            console.error(error);
+                        })
+                        .finally(function() {
+                            self.loading = false;
+                        });
+                },
+                openModal(type, idx) {
+                    this.typeMenu.id = type.id;
+                    this.typeMenu.name = type.name;
+                    this.listMenusByType = this.listMenus.filter(menu => {
+                        return menu.types.some(t => t.type_menu_id == type.id);
+                    }).sort((a, b) => a.name.localeCompare(b.name));
+                    this.day.original = this.selectedDay(idx);
+                    this.day.formatted = this.formatedDate(this.day.original);
+                    $('#createBillModal').modal('show');
+                },
+                formatedDate(value) {
+                    const date = dayjs(value);
+                    return date.format('DD/MM/YYYY');
+                },
+                selectedDay(value) {
+                    let day = null;
+                    switch (value) {
+                        case 0:
+                            day = this.week.monday;
+                            break;
+                        case 1:
+                            day = this.week.tuesday;
+                            break;
+                        case 2:
+                            day = this.week.wednesday;
+                            break;
+                        case 3:
+                            day = this.week.thursday;
+                            break;
+                        case 4:
+                            day = this.week.friday;
+                            break;
+                    }
+
+                    return day;
+                },
+                reset() {
+                    this.menu = {
+                        cod: '',
+                        name: '',
+                        image: '',
+                        newImage: null,
+                    };
+                    this.error = {
+                        cod: false,
+                        name: false,
+                    };
+                    this.loading = false;
+                    this.menuId = 1;
+                    this.counter = this.counterDb;
+                }
+            }
+        });
